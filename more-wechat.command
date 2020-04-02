@@ -1,7 +1,7 @@
 #!/bin/bash
+#!/author:wuyouning
 counts=1
 regex="[0-9]"
-chmod +x ./counts.sh
 echo "你想打开多少个微信" 
 read aNum
 
@@ -19,3 +19,7 @@ done
     done
         let "counts--"
         echo "执行完毕，一共打开了$counts 个微信，尽情享受吧！"
+        echo "感觉有用去给我的知乎点个赞吧 https://www.zhihu.com/question/60153484"
+
+c="`date`+启动了$counts个微信"
+echo "$c" >> WeChat.log
