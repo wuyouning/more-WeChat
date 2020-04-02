@@ -1,11 +1,13 @@
 #!/bin/bash
 #!/author:wuyouning
+chmod +x ./more-wechat.sh
 counts=1
 regex="[0-9]"
-echo "你想打开多少个微信" 
+echo -e "直接敲击etner打开一个微信\n你想打开多个微信可以输入数字后敲击enter，" 
 read aNum
+aNum=${aNum:-1} #空值判断 默认1
 
-while [[ $aNum != $regex ]] #值做判断
+while [[ $aNum != $regex ]] or [! -n $aNum]#值做判断
 do
     echo "输入不正确，重新输入数字吧"
     read aNum
