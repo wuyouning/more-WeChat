@@ -1,6 +1,5 @@
 #!/bin/bash
 #!/author:wuyouning
-chmod +x ./more-wechat.sh
 counts=1
 regex="[0-9]"
 echo -e "直接敲击etner打开一个微信\n你想打开多个微信可以输入数字后敲击enter，" 
