@@ -1,22 +1,19 @@
-
-::查找文件，文件为wechat.exe，找到一个就停止，如果要查找所有的a.exe，则去掉goto语句
 @echo off
-::A B C D E这些字母代表盘符
-set "FileName=WeChat.exe"
-for %%a. in (A B C D E F G H I J K L M N) do (
-    if exist %%a:\ (
-        cd /d %%a:\
-        for /f "delims=" %%b in ('dir /s /a-d /b %FileName%') do (
-            if exist "%%b" (
-                echo %%b 
-                goto deal
-            )
-         )
-      )
+setlocal
+rem Open the desktop launcher without terminating WeChat.
+if exist "%~dp0more-wechat.exe" (
+    start "" "%~dp0more-wechat.exe"
+    exit /b 0
 )
-
-:deal
+if exist "%LOCALAPPDATA%\more-WeChat\more-wechat.exe" (
+    start "" "%LOCALAPPDATA%\more-WeChat\more-wechat.exe"
+    exit /b 0
+)
+if exist "%~dp0src-tauri\target\release\more-wechat.exe" (
+    start "" "%~dp0src-tauri\target\release\more-wechat.exe"
+    exit /b 0
+)
+echo Please install the more-WeChat desktop preview, or run pnpm tauri dev.
+echo See readme.md for installation and compatibility details.
 pause
-
-TASKKILL /F /IM wechat.exe
-start "" %%b
+exit /b 1

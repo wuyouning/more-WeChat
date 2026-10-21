@@ -1,0 +1,32 @@
+name: 启动问题
+description: 报告安装检测、启动或兼容性问题
+body:
+  - type: markdown
+    attributes:
+      value: "请先在应用中导出诊断信息，检查内容后再附加。请勿提供二维码、聊天内容或账号凭据。"
+  - type: input
+    id: environment
+    attributes:
+      label: 系统版本与架构
+      placeholder: Windows 11 x64 / macOS 15 Apple Silicon
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: more-WeChat 与微信版本
+      placeholder: more-WeChat 0.2.0 / 微信 4.x.x.x
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤和实际结果
+      description: 请说明启动前已有几个微信、目标数量、错误提示，以及是否使用管理员权限。
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostic
+    attributes:
+      label: 诊断信息与截图
+      description: 可附上应用导出的 JSON 文件。请先检查路径或截图中是否有个人信息。
