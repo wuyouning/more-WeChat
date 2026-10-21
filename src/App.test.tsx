@@ -193,6 +193,28 @@ describe("微信启动界面", () => {
     ).toBeEnabled();
   });
 
+  it("显示已验收的系统组合，同时保留验证范围说明", async () => {
+    api.snapshot.mockResolvedValue(
+      state({
+        compatibility: {
+          status: "verified",
+          message: "Windows 11 本机双账号登录及收发消息通过；截图与通话待验",
+          canMultiLaunch: true,
+        },
+      }),
+    );
+    render(<App />);
+    await ready();
+    expect(screen.getByText("当前组合已通过双账号验收")).toBeInTheDocument();
+    expect(
+      screen.queryByText("此版本的多开能力尚未验证"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/截图与通话待验/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "启动至 2 个实例" }),
+    ).toBeEnabled();
+  });
+
   it("进度订阅失败会清除进度并显示错误", async () => {
     api.onProgress.mockRejectedValue({
       code: "event_error",

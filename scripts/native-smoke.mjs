@@ -76,7 +76,15 @@ try {
   };
   const snapshot = await invoke("get_snapshot");
   assert.equal(snapshot.platform, "windows");
-  assert.equal(snapshot.compatibility.status, "unverified");
+  assert(
+    ["verified", "unverified", "unsupported"].includes(
+      snapshot.compatibility.status,
+    ),
+  );
+  if (process.argv.includes("--expect-verified")) {
+    assert.equal(snapshot.compatibility.status, "verified");
+    assert.equal(snapshot.compatibility.canMultiLaunch, true);
+  }
   originalTarget = snapshot.settings.targetCount;
   await invoke("save_target", { target: 1 });
   assert.equal((await invoke("get_snapshot")).settings.targetCount, 1);

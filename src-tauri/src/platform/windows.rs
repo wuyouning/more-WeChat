@@ -185,13 +185,10 @@ impl Adapter for WindowsAdapter {
 
     fn compatibility(&self, installation: &Installation) -> Compatibility {
         match rule_for(installation) {
-            Ok(Some(rule)) => Compatibility::unverified(
-                if rule.strategy == Strategy::Normal {
-                    "此构建已观测到普通启动后两个主进程共存；双账号登录仍待人工验收。将尝试普通启动并检测结果"
-                } else {
-                    "此构建的启动锁已观测并配置；双账号登录仍待人工验收，请先用测试账号验证"
-                },
-                true,
+            Ok(Some(rule)) => compatibility_for(
+                &rule,
+                System::os_version().as_deref(),
+                std::env::consts::ARCH,
             ),
             Ok(None) => Compatibility::unverified(
                 "此微信构建尚未配置实测启动策略，可启动单个实例并导出诊断；多开暂不可用",
@@ -251,6 +248,39 @@ struct Rule {
     module_sha256: String,
     strategy: Strategy,
     mutex_names: Vec<String>,
+    #[serde(default)]
+    verified_environments: Vec<VerifiedEnvironment>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VerifiedEnvironment {
+    os_version: String,
+    architecture: String,
+}
+
+fn compatibility_for(rule: &Rule, os_version: Option<&str>, architecture: &str) -> Compatibility {
+    // A matching binary only establishes an available launch strategy. Human
+    // acceptance is scoped separately to the exact tested OS/architecture.
+    let verified = rule.verified_environments.iter().any(|environment| {
+        Some(environment.os_version.as_str()) == os_version
+            && environment.architecture == architecture
+    });
+    if verified {
+        return Compatibility {
+            status: "verified".into(),
+            message: "维护者已在此 Windows 系统与微信构建组合上确认：两个不同账号可同时登录并正常收发消息。截图、通话和其他系统版本仍待验证。".into(),
+            can_multi_launch: true,
+        };
+    }
+    Compatibility::unverified(
+        if rule.strategy == Strategy::Normal {
+            "此微信构建已有普通启动策略；当前系统与架构组合尚未完成双账号验收，将尝试启动并检测结果"
+        } else {
+            "此构建的启动锁已观测并配置；当前系统与架构组合尚未完成双账号验收，请先用测试账号验证"
+        },
+        true,
+    )
 }
 
 fn rule_for(installation: &Installation) -> Result<Option<Rule>, AppError> {
@@ -777,5 +807,43 @@ mod tests {
             version: "99.99.99".into(),
         };
         assert!(rule_for(&installation).unwrap().is_none());
+    }
+
+    fn acceptance_rule() -> Rule {
+        serde_json::from_value(serde_json::json!({
+            "version": "test", "sha256": "test", "moduleSha256": "test", "strategy": "normal", "mutexNames": [],
+            "verifiedEnvironments": [{ "osVersion": "11 (22631)", "architecture": "x86_64" }]
+        })).unwrap()
+    }
+
+    #[test]
+    fn human_acceptance_matches_only_tested_environment() {
+        let result = compatibility_for(&acceptance_rule(), Some("11 (22631)"), "x86_64");
+        assert_eq!(result.status, "verified");
+        assert!(result.can_multi_launch);
+    }
+
+    #[test]
+    fn other_or_unknown_environments_remain_unverified() {
+        for (os, arch) in [
+            (Some("11 (26100)"), "x86_64"),
+            (Some("10 (19045)"), "x86_64"),
+            (Some("11 (22631)"), "aarch64"),
+            (None, "x86_64"),
+        ] {
+            let result = compatibility_for(&acceptance_rule(), os, arch);
+            assert_eq!(result.status, "unverified");
+            assert!(result.can_multi_launch);
+        }
+    }
+
+    #[test]
+    fn strategy_without_acceptance_is_never_verified() {
+        let mut rule = acceptance_rule();
+        rule.verified_environments.clear();
+        assert_eq!(
+            compatibility_for(&rule, Some("11 (22631)"), "x86_64").status,
+            "unverified"
+        );
     }
 }

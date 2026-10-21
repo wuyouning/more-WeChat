@@ -410,7 +410,7 @@ export default function App() {
               <div>
                 <strong>
                   {snapshot.compatibility.status === "verified"
-                    ? "此版本已完成实机验证"
+                    ? "当前组合已通过双账号验收"
                     : "此版本的多开能力尚未验证"}
                 </strong>
                 <p>{snapshot.compatibility.message}</p>
