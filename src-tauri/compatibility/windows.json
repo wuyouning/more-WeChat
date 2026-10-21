@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "rules": [
+    {
+      "version": "4.1.15.13",
+      "sha256": "a832fb321ddb5f9701dd3a7bb1958804f09b620b9ad328f52e2e352651ab886c",
+      "moduleSha256": "10f8e995453e2da46d4f2b5080cd6da1f13cc5147746adc119ceae38cb039de5",
+      "strategy": "normal",
+      "mutexNames": []
+    }
+  ]
+}

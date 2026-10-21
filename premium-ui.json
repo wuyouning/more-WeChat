@@ -1,0 +1,17 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": ["src"],
+  "locale": "zh-CN",
+  "canonicalMap": "DESIGN.md",
+  "requiredCapabilities": ["Scrollbar", "Toast", "Form"],
+  "requiredCommands": ["unit", "build", "browser"],
+  "commands": {
+    "unit": "pnpm test",
+    "build": "pnpm build",
+    "browser": "pnpm test:browser"
+  },
+  "evidence": {
+    "failurePaths": "src/App.test.tsx",
+    "stateMatrix": "scripts/browser-smoke.mjs"
+  }
+}

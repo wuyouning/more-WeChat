@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "more-WeChat",
+  "version": "0.2.0",
+  "identifier": "io.github.wuyouning.more-wechat",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [{ "label": "main", "title": "more-WeChat · 微信启动与诊断", "width": 1040, "height": 780, "minWidth": 760, "minHeight": 640, "center": true }],
+    "security": { "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'" }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "shortDescription": "微信启动与诊断工具（预览版）",
+    "category": "Utility",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "macOS": { "minimumSystemVersion": "13.0" },
+    "windows": { "nsis": { "installMode": "currentUser", "languages": ["SimpChinese"], "displayLanguageSelector": false }, "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true } }
+  }
+}
