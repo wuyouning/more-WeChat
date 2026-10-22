@@ -1,6 +1,6 @@
 [package]
 name = "more-wechat"
-version = "0.2.0"
+version = "0.2.1"
 description = "微信启动与诊断工具"
 authors = ["wuyouning"]
 edition = "2021"

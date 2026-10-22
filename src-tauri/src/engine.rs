@@ -45,6 +45,7 @@ pub fn launch_to_target(
     }
     let mut errors = vec![];
     let mut confirmed_new = HashSet::new();
+    let required_samples = adapter.startup_confirmation_samples().clamp(3, 20);
     while instances.len() < target as usize {
         let old_pids: HashSet<u32> = instances.iter().map(|instance| instance.pid).collect();
         let previous_count = instances.len();
@@ -69,7 +70,9 @@ pub fn launch_to_target(
         });
         let mut stable_pids = HashSet::new();
         let mut stable_samples = 0;
-        for _ in 0..20 {
+        // Preserve the original startup allowance when a platform needs a longer
+        // observation window after its first new PID appears.
+        for _ in 0..(17 + required_samples) {
             sleep(Duration::from_millis(750));
             match adapter.instances(installation) {
                 Ok(observed) => instances = observed,
@@ -90,7 +93,7 @@ pub fn launch_to_target(
                     stable_samples = 1;
                 }
                 stable_pids = new_pids;
-                if stable_samples >= 3 {
+                if stable_samples >= required_samples {
                     break;
                 }
             } else {
@@ -101,7 +104,7 @@ pub fn launch_to_target(
         if !errors.is_empty() {
             break;
         }
-        if stable_samples < 3 {
+        if stable_samples < required_samples {
             errors.push("未检测到持续运行的新实例，微信可能拒绝了多开或启动后已退出".into());
             break;
         }
@@ -119,6 +122,9 @@ pub fn launch_to_target(
         Err(error) => errors.push(error.message),
     }
     let after = instances.len();
+    if after < target as usize && errors.is_empty() {
+        errors.push("新实例在启动确认后退出，结束检查时未达到目标数量".into());
+    }
     let reached = after >= target as usize && errors.is_empty();
     let status = if reached {
         "success"
@@ -158,6 +164,7 @@ mod tests {
     use crate::model::{Compatibility, Instance};
     use std::sync::Mutex;
     struct Fake {
+        initial_count: usize,
         count: Mutex<usize>,
         calls: Mutex<usize>,
         fail_at: usize,
@@ -165,10 +172,13 @@ mod tests {
         instant_exit: bool,
         rotating_pid: bool,
         observations: Mutex<u32>,
+        exit_after_observation: Option<u32>,
+        confirmation_samples: usize,
     }
     impl Fake {
         fn new(count: usize) -> Self {
             Self {
+                initial_count: count,
                 count: Mutex::new(count),
                 calls: Mutex::new(0),
                 fail_at: usize::MAX,
@@ -176,6 +186,8 @@ mod tests {
                 instant_exit: false,
                 rotating_pid: false,
                 observations: Mutex::new(0),
+                exit_after_observation: None,
+                confirmation_samples: 3,
             }
         }
     }
@@ -186,7 +198,15 @@ mod tests {
         fn instances(&self, _: &Installation) -> Result<Vec<Instance>, AppError> {
             let mut observations = self.observations.lock().unwrap();
             *observations += 1;
-            Ok((0..*self.count.lock().unwrap())
+            let count = if self
+                .exit_after_observation
+                .is_some_and(|last| *observations > last)
+            {
+                self.initial_count
+            } else {
+                *self.count.lock().unwrap()
+            };
+            Ok((0..count)
                 .map(|i| Instance {
                     pid: if self.rotating_pid {
                         *observations
@@ -201,6 +221,9 @@ mod tests {
         }
         fn compatibility(&self, _: &Installation) -> Compatibility {
             Compatibility::unverified("未适配", self.supported)
+        }
+        fn startup_confirmation_samples(&self) -> usize {
+            self.confirmation_samples
         }
         fn launch_one(
             &self,
@@ -291,5 +314,28 @@ mod tests {
         let result = run(&fake, 1).unwrap();
         assert_eq!(result.status, "failed");
         assert!(!result.errors.is_empty());
+    }
+
+    #[test]
+    fn late_startup_crash_does_not_pass_longer_platform_confirmation() {
+        let mut fake = Fake::new(1);
+        fake.confirmation_samples = 20;
+        fake.exit_after_observation = Some(8);
+        let result = run(&fake, 2).unwrap();
+        assert_eq!(result.status, "failed");
+        assert_eq!(result.before, 1);
+        assert_eq!(result.after, 1);
+        assert!(!result.errors.is_empty());
+        assert_eq!(*fake.calls.lock().unwrap(), 1);
+    }
+
+    #[test]
+    fn exit_during_final_recheck_includes_an_error() {
+        let mut fake = Fake::new(1);
+        fake.exit_after_observation = Some(4);
+        let result = run(&fake, 2).unwrap();
+        assert_eq!(result.status, "failed");
+        assert_eq!(result.after, 1);
+        assert!(result.errors[0].contains("退出"));
     }
 }
