@@ -1,6 +1,6 @@
 # 兼容记录与验收
 
-记录日期：2026-10-21。这里区分源码/自动化验证、真实进程观察和双账号人工验收，不能相互替代。
+记录更新日期：2026-10-22。这里区分源码/自动化验证、启动器分发信任检查、真实进程观察和多账号人工验收，不能相互替代。
 
 ## Windows 本机验收
 
@@ -35,7 +35,45 @@ EXE 的 Authenticode 检查为 Valid，签名主体为 Tencent Technology (Shenz
 
 ## macOS 状态
 
-当前 Windows 开发主机没有 Apple 运行时和测试账号，因此没有 macOS 微信实机结论。CI 编译通过也不能证明副本可登录。适配细节与边界见 [macos-adapter.md](macos-adapter.md)。
+2026-10-21 在 Intel Mac（macOS 26.3.1 (a)，构建 25D771280a，x86_64）对 `/Applications/WeChat.app` 的微信 4.1.13 完成了原版签名校验和临时副本生成、签名检查。原版 Bundle ID 为 `com.tencent.xinWeChat`，Tencent Team ID 为 `5A4RE8SF68`。
+
+修复前，`codesign -R` 的身份表达式缺少 `=` 前缀，被系统当成文件名，导致合法原版校验失败，并被界面表现为未找到微信。修复后，同一原版通过 Apple 签名链、Bundle ID 和 Team ID 的严格校验；临时副本经正式生成逻辑修改身份、过滤权限并 ad-hoc 签名，完整性验证通过，原版指纹未改变。测试未启动微信，临时副本已自动清理。
+
+同时确认当前 more-WeChat 预览包为 ad-hoc 签名、未公证，`spctl --assess --type execute` 返回 rejected。用户首次打开时的“隐私与安全”确认属于安装包分发信任问题；正式处理需要 Developer ID Application 签名和 Apple 公证。
+
+2026-10-22 已在上述 Intel Mac 上导入与本机 CSR 私钥匹配的 Developer ID Application 证书，生成带 Hardened Runtime 和安全时间戳的 `.app`、`.dmg`，两者签名及团队身份校验通过。Apple 公证提交 `9a262708-d72d-417e-b455-9005be2e105e` 返回 `Accepted`，日志为 `Ready for distribution`、无 issues。应用与 DMG 均已装订并验证公证票据，Gatekeeper 评估均为 `accepted / Notarized Developer ID`。此结论适用于本次本机生成的 Intel 签名公证包，当前 CI 下载包仍为 ad-hoc 预览包。
+
+### v0.2.1 独立窗口启动修复
+
+2026-10-22 维护者反馈目标 2 时只留下一个窗口，而工具显示成功。检查发现 slot 2 已生成且签名完整，但内置 Chromium/crashpad 的 `bootstrap_check_in` 被继承沙盒拒绝，主进程随后以 `SIGTRAP` 退出。旧逻辑只确认连续三次进程可见，可能在约两秒时报告成功，漏掉辅助组件初始化后的崩溃。
+
+v0.2.1 保留 App Sandbox，为每个 slot 自身的 MachPortRendezvousServer、crashpad 握手两个命名空间添加注册与查找规则；适配规则修订变化会刷新已停止副本，保留 Bundle ID 与容器身份。macOS 启动改为连续 20 次观测，并在最终数量不足时返回明确错误。回归测试覆盖延迟退出、最终检查退出、规则作用范围及旧副本刷新。
+
+本机正式编排检查返回 `before=1, after=2, target=2, status=success`；原版 PID 和启动时间保持不变。维护者进一步确认已经看到两个独立微信窗口，随后完成下述四开场景的登录与消息收发人工验收。Apple Silicon 尚待实机验证。进程、窗口和启动器公证检查本身不能替代账号登录验收。适配细节与边界见 [macos-adapter.md](macos-adapter.md)。
+
+v0.2.1 Intel 安装包已完成 Developer ID 签名，Apple 公证提交 `97107b24-e92e-4a69-9f67-86b5f229577c` 返回 `Accepted`、无 issues。`.app` 与 `.dmg` 已装订票据并通过 Gatekeeper；最终 DMG 只读挂载后，内部应用的版本、x86_64 架构、签名与系统信任检查也通过。上述两个主进程在后续约六分钟观察中持续存在。
+
+### 四实例检查与旧版安装排查
+
+同日维护者反馈目标 4 时失败。检查安装目录与进程发现启动器仍为 v0.2.0；slot 2 已由本机诊断流程刷新为适配修订 2，但 slot 3、4 仍由旧版生成，没有修订字段或对应 Mach 服务规则。两者的崩溃栈及沙盒拒绝记录与上述 `bootstrap_check_in` 问题一致。
+
+使用 v0.2.1 的正式编排刷新已停止的 slot 3、4 后，检查返回 `before=2, after=4, target=4, status=success, errors=[]`。原来两个主进程的 PID 与启动时间保持不变。本机 `/Applications/more-WeChat.app` 已替换为签名、公证检查通过的 v0.2.1 并重新打开；旧启动器在仓库外备份。
+
+维护者确认已看到四个独立微信窗口。额外连续观察 60 秒，四个主进程均保持原 PID；再次启动目标 4 返回 `before=4, after=4, status=unchanged`，未新增第五个实例。
+
+### Intel Mac 登录与消息收发人工验收
+
+2026-10-22，维护者在确认四个独立窗口后进一步反馈：“验证了登陆和收发，都没有什么问题”。据此记录本机四开场景的账号登录与消息收发人工验收通过。环境为 Intel x86_64、macOS 26.3.1 (a)（25D771280a）、微信 4.1.13、more-WeChat v0.2.1。工具未自动操作登录或读取聊天内容。
+
+| 项目 | 结果 |
+| --- | --- |
+| 双开、四开启动与独立窗口 | 正式编排检查通过，维护者确认四个独立窗口 |
+| 登录与消息收发 | **维护者本机人工确认正常** |
+| 目标 4 重复启动 | 返回 unchanged，保持四个实例 |
+| 截图、通话 | 待人工验收 |
+| Apple Silicon、其他 macOS 或微信构建 | 待实机验证 |
+
+此结论仅适用于上述本机组合。macOS 运行时兼容提示目前仍为通用“版本未验证”，尚未依据此人工记录添加具体构建的已验证匹配规则。
 
 ## 扩大验证范围与正式发布前的验收
 

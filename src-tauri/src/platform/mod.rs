@@ -11,6 +11,10 @@ pub trait Adapter: Send + Sync {
     fn detect(&self, selected: Option<&str>) -> Result<Option<Installation>, AppError>;
     fn instances(&self, installation: &Installation) -> Result<Vec<Instance>, AppError>;
     fn compatibility(&self, installation: &Installation) -> Compatibility;
+    /// Number of consecutive observations required before accepting a new PID.
+    fn startup_confirmation_samples(&self) -> usize {
+        3
+    }
     fn clones(
         &self,
         _installation: &Installation,

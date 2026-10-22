@@ -1,6 +1,6 @@
 # more-WeChat
 
-**微信多开启动与诊断工具 · Windows / macOS · v0.2.0 预览版**
+**微信多开启动与诊断工具 · Windows / macOS · v0.2.1**
 
 [![构建状态](https://github.com/wuyouning/more-WeChat/actions/workflows/desktop.yml/badge.svg?branch=master)](https://github.com/wuyouning/more-WeChat/actions/workflows/desktop.yml?query=branch%3Amaster)
 
@@ -20,26 +20,28 @@
 
 ## 下载与安装
 
-以下是 [2026-10-21 已通过检查的 v0.2.0 构建](https://github.com/wuyouning/more-WeChat/actions/runs/39575433583)，点击下载对应 ZIP，**需要登录 GitHub**：
+从 [v0.2.1 发布页](https://github.com/wuyouning/more-WeChat/releases/tag/v0.2.1) 下载安装包，**无需登录 GitHub**。此版本修复 Mac 微信自动检测失败、副本启动崩溃与启动结果误报；Intel 安装包已完成 Developer ID 签名和 Apple 公证。完整更新说明见 [版本记录](CHANGELOG.md)。
 
-| 平台 | 下载预览包 | 解压后安装 |
+| 平台 | 下载安装包 | 安装方法 |
 | --- | --- | --- |
-| Windows x64 | [Windows 安装包](https://github.com/wuyouning/more-WeChat/actions/runs/39575433583/artifacts/12334720836) | 运行 `more-WeChat_0.2.0_x64-setup.exe`，按当前用户安装 |
-| Mac Apple Silicon（M 系列） | [Mac arm64 安装包](https://github.com/wuyouning/more-WeChat/actions/runs/39575433583/artifacts/12333752797) | 打开 `more-WeChat_0.2.0_aarch64.dmg`，将应用拖入 Applications |
-| Mac Intel | [Mac x64 安装包](https://github.com/wuyouning/more-WeChat/actions/runs/39575433583/artifacts/12334052051) | 打开 `more-WeChat_0.2.0_x64.dmg`，将应用拖入 Applications |
+| Windows x64 | [Windows 安装包](https://github.com/wuyouning/more-WeChat/releases/download/v0.2.1/more-WeChat_0.2.1_x64-setup.exe) | 运行安装器，按当前用户安装 |
+| Mac Apple Silicon（M 系列） | [Mac arm64 安装包](https://github.com/wuyouning/more-WeChat/releases/download/v0.2.1/more-WeChat_0.2.1_aarch64.dmg) | 打开 DMG，将应用拖入 Applications；此包尚未公证，微信兼容性待实机验证 |
+| Mac Intel | [Mac x64 安装包（已签名公证）](https://github.com/wuyouning/more-WeChat/releases/download/v0.2.1/more-WeChat_0.2.1_x64-notarized.dmg) | 打开 DMG，将应用拖入 Applications，替换旧版本 |
 
-下载最新主分支构建，或上面的预览产物过期时，请进入 [主分支构建与下载页面](https://github.com/wuyouning/more-WeChat/actions/workflows/desktop.yml?query=branch%3Amaster)，打开最近一次成功运行，在 **Artifacts** 中选择对应平台。
+后续正式版本可从 [最新发布页](https://github.com/wuyouning/more-WeChat/releases/latest) 获取；开发预览包仍在 [主分支构建页面](https://github.com/wuyouning/more-WeChat/actions/workflows/desktop.yml?query=branch%3Amaster) 的 **Artifacts** 中，需要登录 GitHub。
 
-Windows 需要 WebView2；系统没有安装时，安装器会下载该运行时，应用运行过程不联网。当前 Windows 包未作发行者签名；Mac 包为 ad-hoc 签名、未公证，系统可能限制运行。Mac 微信实机兼容性尚待验证，详见下表。
+Windows 需要 WebView2；系统没有安装时，安装器会下载该运行时，应用运行过程不联网。Windows 包未作发行者签名；Mac Apple Silicon 包为 ad-hoc 签名、未公证，系统可能限制运行。Intel 发布包已完成签名公证，并通过下表所列组合的人工验收。发布页提供 SHA256 校验文件。
+
+未公证的 Mac 预览包或 Apple Silicon 包首次打开若被系统拦截，确认包来自本仓库后，可在“系统设置 → 隐私与安全”中对此应用选择“仍要打开”。检测微信不需要授予辅助功能或完全磁盘访问。分发签名与原版微信签名校验的区别见 [Mac 首次打开与签名排查](docs/macos-adapter.md#启动器首次打开与签名排查)。旧包若在工具内误报微信原版签名失败，请更新到 v0.2.1。
 
 ## 兼容情况
 
-**Windows 本机组合已通过双账号登录与消息收发验收。** 已验证范围为 Windows 11 x64（10.0.22631）与下表所列微信构建；其他系统组合及 macOS 仍显示未验证。“主进程已运行”本身不表示账号已登录。
+**Windows 本机组合已通过双账号登录与消息收发验收，Intel Mac 本机组合已通过四开场景下的登录与消息收发验收。** 已验证环境见下表。macOS 界面目前仍使用通用“版本未验证”提示，未按本次人工记录自动标记具体构建；其他系统组合不能据此视为已验证。“主进程已运行”本身不表示账号已登录。
 
 | 平台 | 当前实现与验证 | 多开策略 |
 | --- | --- | --- |
 | Windows 10/11 x64 | **已验证：Windows 11 x64（10.0.22631）/ 微信 4.1.15.13，维护者确认两个不同账号同时登录且正常收发消息**；截图与通话待验 | EXE、DLL 指纹和系统/架构均匹配才显示已验证；同构建其他系统可尝试普通启动；其他微信构建暂仅支持单开与诊断 |
-| macOS 13+ Apple Silicon / Intel | 原版身份、签名和权限预检查；纯逻辑测试通过，实机启动与双账号待验 | 给符合条件的微信 4.x 创建独立副本并本地签名 |
+| macOS 13+ Apple Silicon / Intel | **已人工验证：Intel / macOS 26.3.1 (a)（25D771280a）/ 微信 4.1.13 / more-WeChat v0.2.1，四个独立窗口，登录与消息收发正常**；截图、通话及 Apple Silicon 实机待验 | 给符合条件的微信 4.x 创建独立副本并本地签名 |
 
 完整测试边界、构建指纹及验收步骤见 [兼容记录](docs/compatibility.md)。Windows 互斥锁适配只接受内置的具体构建和准确名称；当前没有启用远程句柄关闭规则，不会拿其他锁来试错。
 
@@ -82,7 +84,7 @@ pnpm tauri build --bundles dmg --ci
 
 Windows 原生集成检查：先运行 `pnpm dev`，再执行 `cargo build --manifest-path src-tauri/Cargo.toml` 和 `pnpm test:native`。测试只给自建调试应用启用本机 WebView2 调试端口，检查真实 IPC、无效输入、设置持久化、达标不新增、诊断导出及原生界面；不会操作微信登录界面。生产构建不启用该端口。
 
-当前版本已通过 9 项界面测试、Windows 21 项 Rust 测试、macOS 26 项 Rust 测试，以及三个平台安装包构建。架构与原生接口见 [实现说明](docs/architecture.md)，微信实机结论见 [兼容记录](docs/compatibility.md)。
+本次 macOS 修复已通过 31 项 Rust 测试与 Clippy，并完成本机 1 → 2、2 → 4 实例启动检查，以及目标 4 重复启动不新增实例的检查。此前已通过 9 项界面测试、Windows 21 项 Rust 测试、1 项显式副本签名测试及三个平台安装包构建。架构与原生接口见 [实现说明](docs/architecture.md)，微信实机结论见 [兼容记录](docs/compatibility.md)。
 
 ## 设置与数据
 

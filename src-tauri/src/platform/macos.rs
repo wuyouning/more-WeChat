@@ -23,6 +23,7 @@ const OWNER: &str = "more-WeChat/macos-clones/v1";
 const ROOT_MARKER: &str = ".more-wechat-owner.json";
 const CLONE_MARKER: &str = ".more-wechat-clone.json";
 const APP_NAME: &str = "WeChat.app";
+const CLONE_ADAPTER_REVISION: u32 = 2;
 
 pub struct MacAdapter;
 
@@ -52,9 +53,17 @@ struct CloneMarker {
     source_version: String,
     source_fingerprint: String,
     executable_name: String,
+    #[serde(default)]
+    adapter_revision: u32,
 }
 
 impl Adapter for MacAdapter {
+    fn startup_confirmation_samples(&self) -> usize {
+        // WeChat can create a window, then abort several seconds later when its
+        // Chromium helpers initialize. Three 750 ms samples are too short here.
+        20
+    }
+
     fn detect(&self, selected: Option<&str>) -> Result<Option<Installation>, AppError> {
         if let Some(path) = selected {
             let bundle = original(Path::new(path))?;
@@ -130,7 +139,7 @@ impl Adapter for MacAdapter {
         let check = || -> Result<(), AppError> {
             let source = original(Path::new(&installation.path))?;
             require_version(&source.version)?;
-            let _ = clone_entitlements(&source.path)?;
+            let _ = clone_entitlements(&source.path, 2)?;
             Ok(())
         };
         match check() {
@@ -187,7 +196,7 @@ impl Adapter for MacAdapter {
             return open_bundle(&source.path);
         }
         require_version(&source.version)?;
-        let entitlements = clone_entitlements(&source.path)?;
+        let entitlements = clone_entitlements(&source.path, slot)?;
         let root =
             managed_root(true)?.ok_or_else(|| AppError::new("io_error", "无法创建副本目录"))?;
         let target = slot_path(&root, slot);
@@ -380,12 +389,21 @@ fn verify_signature(path: &Path, requirement: Option<&str>) -> Result<(), AppErr
     let mut command = Command::new("/usr/bin/codesign");
     command.args(["--verify", "--deep", "--strict"]);
     if let Some(requirement) = requirement {
-        command.arg("-R").arg(requirement);
+        // codesign treats an unprefixed requirement as a filename. The '=' is
+        // required to pass the expression itself, including for copied originals.
+        command.arg("-R").arg(format!("={requirement}"));
     }
-    run(
-        command.arg(path),
-        "应用签名验证失败（请使用腾讯原版安装，或重新生成副本）",
-    )?;
+    let context = if requirement.is_some() {
+        "微信原版签名验证失败，请确认所选应用为腾讯发布的完整安装"
+    } else {
+        "独立副本签名验证失败，请重新生成副本"
+    };
+    run(command.arg(path), context).map_err(|mut error| {
+        if error.code == "launch_failed" {
+            error.code = "invalid_signature".into();
+        }
+        error
+    })?;
     Ok(())
 }
 
@@ -449,7 +467,8 @@ fn fingerprint(source: &Bundle) -> Result<String, AppError> {
 }
 
 fn is_outdated(marker: &CloneMarker, source: &Bundle, fingerprint: &str) -> bool {
-    marker.source_path != source.path
+    marker.adapter_revision != CLONE_ADAPTER_REVISION
+        || marker.source_path != source.path
         || marker.source_version != source.version
         || marker.source_fingerprint != fingerprint
 }
@@ -619,7 +638,7 @@ fn remove_owned(root: &Path, directory: &Path, slot: u8) -> Result<(), AppError>
     fs::remove_dir_all(directory).map_err(|e| AppError::io("清理受管理的副本文件失败", e))
 }
 
-fn clone_entitlements(path: &Path) -> Result<Value, AppError> {
+fn clone_entitlements(path: &Path, slot: u8) -> Result<Value, AppError> {
     let output = run(
         Command::new("/usr/bin/codesign")
             .args(["--display", "--entitlements", "-", "--xml"])
@@ -632,10 +651,13 @@ fn clone_entitlements(path: &Path) -> Result<Value, AppError> {
         Value::from_reader(std::io::Cursor::new(output.stdout))
             .map_err(|e| AppError::new("invalid_signature", format!("无法解析微信签名权限：{e}")))?
     };
-    sanitize_entitlements(value)
+    sanitize_entitlements(value, slot)
 }
 
-fn sanitize_entitlements(value: Value) -> Result<Value, AppError> {
+fn sanitize_entitlements(value: Value, slot: u8) -> Result<Value, AppError> {
+    if !(2..=5).contains(&slot) {
+        return Err(AppError::new("invalid_slot", "独立副本编号必须为 2 到 5"));
+    }
     let mut entitlements = value
         .into_dictionary()
         .ok_or_else(|| AppError::new("invalid_signature", "微信签名权限格式无效"))?;
@@ -670,6 +692,30 @@ fn sanitize_entitlements(value: Value) -> Result<Value, AppError> {
     entitlements.insert(
         "com.apple.security.cs.disable-library-validation".into(),
         Value::Boolean(true),
+    );
+    // Chromium's MAS helpers retain Tencent's team prefix and inherit the root
+    // sandbox. Removing Tencent App Groups also removes their IPC permission.
+    // Only grant this slot's two observed bootstrap namespaces; keep sandboxing,
+    // vendor App Groups removal, and all original/other-slot boundaries intact.
+    let namespace = format!("{TENCENT_TEAM}.{}", clone_id(slot));
+    let rule = format!(
+        "(allow mach-register mach-lookup (global-name-prefix \"{namespace}.MachPortRendezvousServer.\") (global-name-prefix \"{namespace}.crashpad.child_port_handshake.\"))"
+    );
+    let mut rules = match entitlements.remove("com.apple.security.temporary-exception.sbpl") {
+        None => vec![],
+        Some(Value::Array(rules)) => rules,
+        Some(Value::String(rule)) => vec![Value::String(rule)],
+        Some(_) => {
+            return Err(AppError::new(
+                "unsupported_entitlements",
+                "微信临时沙盒权限格式无效",
+            ))
+        }
+    };
+    rules.push(Value::String(rule));
+    entitlements.insert(
+        "com.apple.security.temporary-exception.sbpl".into(),
+        Value::Array(rules),
     );
     Ok(Value::Dictionary(entitlements))
 }
@@ -718,6 +764,7 @@ fn prepare_clone(
         source_version: source.version.clone(),
         source_fingerprint: source_fingerprint.into(),
         executable_name: source.executable_name.clone(),
+        adapter_revision: CLONE_ADAPTER_REVISION,
     };
     // From this point onward cleanup is allowed only after reading this marker.
     write_json_new(&staging.join(CLONE_MARKER), &marker)?;
@@ -875,6 +922,60 @@ fn prepare_clone(
 mod tests {
     use super::*;
 
+    #[test]
+    fn native_codesign_evaluates_inline_requirement_and_rejects_wrong_identity() {
+        let (_directory, source) = fixture_bundle();
+        // Use a real Mach-O in a disposable bundle; no installed app is modified
+        // or launched. This catches codesign interpreting the expression as a file.
+        fs::copy("/usr/bin/true", &source.executable).unwrap();
+        fs::remove_dir_all(source.path.join("Contents/_CodeSignature")).unwrap();
+        run(
+            Command::new("/usr/bin/codesign")
+                .args(["--force", "--sign", "-", "--timestamp=none"])
+                .arg("--identifier")
+                .arg(ORIGINAL_ID)
+                .arg(&source.path),
+            "签名测试应用失败",
+        )
+        .unwrap();
+
+        verify_signature(&source.path, Some(&format!("identifier \"{ORIGINAL_ID}\""))).unwrap();
+        let error =
+            verify_signature(&source.path, Some("identifier \"invalid.identity\"")).unwrap_err();
+        assert_eq!(error.code, "invalid_signature");
+        // A self-consistent ad-hoc signature must never pass the Tencent trust gate.
+        assert_eq!(
+            original(&source.path).unwrap_err().code,
+            "invalid_signature"
+        );
+    }
+
+    #[test]
+    #[ignore = "需显式指定 MORE_WECHAT_TEST_SOURCE；仅在临时目录复制和签名，不启动微信"]
+    fn installed_wechat_can_prepare_signed_clone_without_launching() {
+        let path = std::env::var_os("MORE_WECHAT_TEST_SOURCE")
+            .expect("请设置 MORE_WECHAT_TEST_SOURCE 为微信原版 .app 的绝对路径");
+        let source = original(Path::new(&path)).unwrap();
+        require_version(&source.version).unwrap();
+        let before = fingerprint(&source).unwrap();
+        let (_temporary, root) = fixture_root();
+        prepare_clone(
+            &root,
+            &source,
+            &before,
+            2,
+            clone_entitlements(&source.path, 2).unwrap(),
+            &|message| println!("{message}"),
+        )
+        .unwrap();
+        let directory = slot_path(&root, 2);
+        let marker = read_clone_marker(&root, &directory, 2).unwrap();
+        let clone = read_managed_bundle(&directory, &marker).unwrap();
+        assert_eq!(clone.bundle_id, clone_id(2));
+        verify_signature(&clone.path, None).unwrap();
+        assert_eq!(fingerprint(&source).unwrap(), before);
+    }
+
     fn process(slot: u8) -> Instance {
         Instance {
             pid: slot as u32,
@@ -978,7 +1079,7 @@ mod tests {
             "com.apple.security.get-task-allow".into(),
             Value::Boolean(true),
         );
-        let value = sanitize_entitlements(Value::Dictionary(entitlements)).unwrap();
+        let value = sanitize_entitlements(Value::Dictionary(entitlements), 2).unwrap();
         let result = value.as_dictionary().unwrap();
         assert_eq!(
             result
@@ -1007,7 +1108,63 @@ mod tests {
     fn unknown_restricted_entitlements_fail_closed() {
         let mut entitlements = Dictionary::new();
         entitlements.insert("com.apple.developer.unknown".into(), Value::Boolean(true));
-        assert!(sanitize_entitlements(Value::Dictionary(entitlements)).is_err());
+        assert!(sanitize_entitlements(Value::Dictionary(entitlements), 2).is_err());
+    }
+
+    #[test]
+    fn inherited_bootstrap_rules_only_allow_the_requested_clone_namespaces() {
+        let existing = "(allow network-outbound (literal \"/private/var/run/usbmuxd\"))";
+        let mut source = Dictionary::new();
+        source.insert(
+            "com.apple.security.app-sandbox".into(),
+            Value::Boolean(true),
+        );
+        source.insert(
+            "com.apple.security.temporary-exception.sbpl".into(),
+            Value::Array(vec![Value::String(existing.into())]),
+        );
+        let value = sanitize_entitlements(Value::Dictionary(source), 3).unwrap();
+        let entitlements = value.as_dictionary().unwrap();
+        let rules = entitlements["com.apple.security.temporary-exception.sbpl"]
+            .as_array()
+            .unwrap();
+        assert_eq!(rules[0].as_string(), Some(existing));
+        let rule = rules[1].as_string().unwrap();
+        assert!(rule.contains("mach-register mach-lookup"));
+        for service in ["MachPortRendezvousServer", "crashpad.child_port_handshake"] {
+            assert!(rule.contains(&format!(
+                "\"5A4RE8SF68.com.tencent.xinWeChat.morewechat.slot3.{service}.\""
+            )));
+        }
+        assert!(!rule.contains("slot2"));
+        assert!(!rule.contains("slot4"));
+        assert!(!rule.contains("(global-name-prefix \"5A4RE8SF68.com.tencent.xinWeChat.\")"));
+        assert_eq!(
+            entitlements["com.apple.security.app-sandbox"].as_boolean(),
+            Some(true)
+        );
+        assert!(!entitlements.contains_key("com.apple.security.application-groups"));
+        for slot in [0, 1, 6, 255] {
+            assert!(sanitize_entitlements(Value::Dictionary(Dictionary::new()), slot).is_err());
+        }
+    }
+
+    #[test]
+    fn old_clone_markers_require_refresh_without_changing_container_identity() {
+        let (_temporary, root) = fixture_root();
+        let mut value = serde_json::to_value(fixture_marker(&root)).unwrap();
+        value.as_object_mut().unwrap().remove("adapter_revision");
+        let marker: CloneMarker = serde_json::from_value(value).unwrap();
+        assert_eq!(marker.adapter_revision, 0);
+        let source = Bundle {
+            path: marker.source_path.clone(),
+            executable: PathBuf::new(),
+            executable_name: marker.executable_name.clone(),
+            bundle_id: ORIGINAL_ID.into(),
+            version: marker.source_version.clone(),
+        };
+        assert!(is_outdated(&marker, &source, &marker.source_fingerprint));
+        assert_eq!(marker.bundle_id, clone_id(2));
     }
 
     fn fixture_root() -> (tempfile::TempDir, PathBuf) {
@@ -1035,6 +1192,7 @@ mod tests {
             source_version: "4.1.0".into(),
             source_fingerprint: "fingerprint".into(),
             executable_name: "WeChat".into(),
+            adapter_revision: CLONE_ADAPTER_REVISION,
         }
     }
 
